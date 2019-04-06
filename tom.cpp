@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 #define RS_NO 5
 #define REG_NO 8 
@@ -30,7 +31,7 @@ typedef struct rs{
 void printState(vector<instruction>& instruction_queue, vector<rs>& RSs, vector<int>& RAT, vector<int>& RF){
 
     // Printing RSs
-    cout << "    Busy  Op  Vj  Vk  Qk  Disp\n";
+    cout << "    Busy  Op  Vj  Vk  Qj  Qk  Disp\n";
     for ( int i = 0; i < RS_NO; i++){
         cout << "RS"<< i << "   "<< RSs[i].busy << "   " << RSs[i].opcode << "   " << RSs[i].vj << "   " << RSs[i].vk << "   " << RSs[i].qj << "   " << RSs[i].qk << "   " << RSs[i].disp << endl;        
     }
@@ -78,10 +79,12 @@ int main(int argc, char** argv){
     fd.open(filename);
 
     vector<instruction> instruction_queue; // Instruction Queue
+    vector<instruction> instruction_queue_extra; // Store extra instruction that did not fit in queue here
     vector<rs> RSs(RS_NO); // Reservation Stations
     vector<int> RAT(REG_NO); // Register Allocation Table
     vector<int> RF(REG_NO); // Register File
     
+    ////////////////////////////////////////
     int no_of_instructions;
     int no_of_cycles;
     int instructions_pending;
@@ -89,28 +92,42 @@ int main(int argc, char** argv){
     instruction inst;
     //////////////////////////////////////////////
     // Initialise all relevant containers
-
+    // Read from instruction file
     fd >> no_of_instructions;
     fd >> no_of_cycles;
-    cout << no_of_instructions << (no_of_cycles);
+    // cout << no_of_instructions << (no_of_cycles);
     instructions_pending = no_of_instructions - min(no_of_instructions,MAX_INST_QUEUE);
 
+    // Fill the instructon buffer
     for( int i = 0; i < min(no_of_instructions,MAX_INST_QUEUE); i++){
-        instruction tmp;
-        fd >> tmp.opcode;
-        fd >> tmp.destination; 
-        fd >> tmp.op1; 
-        fd >> tmp.op2;
-        cout << tmp.opcode << tmp.destination << tmp.op1 << tmp.op2;
-        instruction_queue.push_back(tmp);
+        
+        if (i < MAX_INST_QUEUE){
+            instruction tmp;
+            fd >> tmp.opcode;
+            fd >> tmp.destination; 
+            fd >> tmp.op1; 
+            fd >> tmp.op2;
+            instruction_queue.push_back(tmp);
+        } else {
+            instruction tmp;
+            fd >> tmp.opcode;
+            fd >> tmp.destination; 
+            fd >> tmp.op1; 
+            fd >> tmp.op2;
+            instruction_queue_extra.push_back(tmp);
+        }
     }
+    reverse(instruction_queue.begin(), instruction_queue.end());
+    reverse(instruction_queue_extra.begin(), instruction_queue_extra.end());
 
-    // [TODO] HANDLE EXTRA INSTRUCTIONS
-
+    // Read initial register values
     for (int i = 0; i < REG_NO; i++){
         fd >> RF[i];
     }
 
+    fd.close();
+    
+    // Initialise RSs and RAT 
     for(int i = 0; i < RS_NO; i++){
         RSs[i].busy = 0;
         RSs[i].disp = -1;
@@ -124,22 +141,49 @@ int main(int argc, char** argv){
         RAT[i] = -1;
     }
 
-    //////////////////////////////////////////////
-    
+    ///////////////////////////////////////////////////////////////
+    // Simulation 
     for(int i = 0; i < no_of_cycles; i++){
+        cout << "----------------------------------------\n";
+        cout << "Cycle " << i << endl;
+        
+        // Print current system state
         printState(instruction_queue,RSs,RAT,RF);
+        
+        // Checking for instruction to dispatch - ADD/SUB
         for (int j = 0; j < 3; j++){
-            // Checking for instruction to dispatch
-            if (RSs[j].busy && (RSs[j].vj != -1) && (RSs[j].vk != -1)){
+            
+            if (RSs[j].busy && (RSs[j].vj != -1) && (RSs[j].vk != -1) && (RSs[j].disp == -1) ){
+                // Check if execution unit is busy or not
+                int tmp = false;
+                for (int k = 0; k < 3; k++){
+                    if ( (RSs[k].busy) && (RSs[k].disp != -1) )
+                        tmp = true;
+                }
+
+                if (tmp)
+                    break;
+
                 RSs[j].disp = i;
                 break;
             }
 
         }    
 
+        // Checking for instruction to dispatch - MUL/DIV
         for (int j = 3; j < 5; j++){
-            // Checking for instruction to dispatch
-            if (RSs[j].busy && (RSs[j].vj != -1) && (RSs[j].vk != -1)){
+            
+            if (RSs[j].busy && (RSs[j].vj != -1) && (RSs[j].vk != -1) && (RSs[j].disp == -1) ){
+                // Check if execution unit is busy or not
+                int tmp = false;
+                for (int k = 3; k < 5; k++){
+                    if ((RSs[k].busy) && (RSs[k].disp != -1))
+                        tmp = true;
+                }
+                
+                if (tmp)
+                    break;
+
                 RSs[j].disp = i;
                 break;
             }
@@ -148,7 +192,7 @@ int main(int argc, char** argv){
 
         // Check if an instruction can be issued
         if (instruction_queue.size() != 0){
-            inst = instruction_queue.front();
+            inst = instruction_queue.back();
                 
             if (inst.opcode == 0 ||  inst.opcode == 1) {
                 start = 0;
@@ -158,6 +202,7 @@ int main(int argc, char** argv){
                 end = 5;
             }
 
+            // Issue if vacant resevation stations are left
             for (int j = start; j < end; j++){
                 if (!RSs[j].busy){
                     RSs[j].opcode = inst.opcode;
@@ -182,8 +227,8 @@ int main(int argc, char** argv){
         }
         
         // Execution completion
-        for (int j = 0; j < RS_NO; j++){
-            if ( ( (RSs[j].opcode == 0 || RSs[j].opcode == 1) && (RSs[j].disp + 2 == i) ) || ( (RSs[j].opcode == 2) && (RSs[j].disp + 10 == i) ) || ( (RSs[j].opcode == 3) && (RSs[j].disp + 40 == i) ) ){
+        for (int j = RS_NO-1; j >= 0; j--){
+            if ( (RSs[j].busy && (RSs[j].disp != -1) ) && ( ( (RSs[j].opcode == 0 || RSs[j].opcode == 1) && (RSs[j].disp + 2 <= i) ) || ( (RSs[j].opcode == 2) && (RSs[j].disp + 10 <= i) ) || ( (RSs[j].opcode == 3) && (RSs[j].disp + 40 <= i) ) ) ){
                 int tmp;
                 switch (RSs[j].opcode){
                     case 0:
@@ -204,7 +249,7 @@ int main(int argc, char** argv){
                 
                 // Capturing
                 for (int k = 0; k < RS_NO; k++){
-                    if ( RSs[k].busy && ( (RSs[k].qj == j) || (RSs[k].qk == j)) ){
+                    if( (k != j) && ( RSs[k].busy && ( (RSs[k].qj == j) || (RSs[k].qk == j)) )){
                         if(RSs[k].qj == j){
                             RSs[k].qj = -1;
                             RSs[k].vj = tmp;
@@ -218,7 +263,7 @@ int main(int argc, char** argv){
                 }
                 
                 // Commit
-                for (int k = 0; k < RS_NO; k++){
+                for (int k = 0; k < REG_NO; k++){
                     if (j == RAT[k]){
                         RF[k] = tmp;
                         RAT[k] = -1;
@@ -226,8 +271,22 @@ int main(int argc, char** argv){
                     }
                 }
             
+                // Clearing the completed instruction entry in RS
                 RSs[j].busy = 0;
+                RSs[j].disp = -1;
+                RSs[j].vj = -1;
+                RSs[j].vk = -1;
+                RSs[j].qj = -1;
+                RSs[j].qk = -1;
+
+                break;
             }
+        }
+
+        // Load new instruction into the instruction buffer
+        if (instruction_queue_extra.size() != 0){
+            inst = instruction_queue_extra.back();
+            instruction_queue.insert(instruction_queue.begin(),inst);
         }
 
         
