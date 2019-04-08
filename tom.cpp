@@ -99,7 +99,7 @@ int main(int argc, char** argv){
     instructions_pending = no_of_instructions - min(no_of_instructions,MAX_INST_QUEUE);
 
     // Fill the instructon buffer
-    for( int i = 0; i < min(no_of_instructions,MAX_INST_QUEUE); i++){
+    for( int i = 0; i < no_of_instructions; i++){
         
         if (i < MAX_INST_QUEUE){
             instruction tmp;
@@ -287,6 +287,7 @@ int main(int argc, char** argv){
         if (instruction_queue_extra.size() != 0){
             inst = instruction_queue_extra.back();
             instruction_queue.insert(instruction_queue.begin(),inst);
+            instruction_queue_extra.pop_back();
         }
 
         
